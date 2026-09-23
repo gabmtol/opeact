@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Hardware / GPU Debug</title>
+
+<style>
+    * {
+        box-sizing: border-box;
+    }
+
+    html, body {
+        margin: 0;
+        min-height: 100%;
+        background: #080a0d;
+        color: #d8dee9;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 12px;
+    }
+
+    body {
+        padding: 8px;
+    }
+
+    header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+
+        padding: 8px 10px;
+        margin-bottom: 8px;
+
+        border: 1px solid #26313c;
+        background: #0d1117;
+    }
+
+    h1 {
+        font-size: 15px;
+        margin: 0;
+        color: #fff;
+    }
+
+    #status {
+        color: #ffd866;
+        text-align: right;
+    }
+
+    #grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+        gap: 7px;
+        align-items: start;
+    }
+
+    .card {
+        min-width: 0;
+        border: 1px solid #25303a;
+        background: #0d1117;
+    }
+
+    .card-title {
+        padding: 5px 7px;
+        background: #151b23;
+        border-bottom: 1px solid #25303a;
+
+        color: #7dd3fc;
+        font-weight: bold;
+        font-size: 12px;
+    }
+
+    .row {
+        display: grid;
+        grid-template-columns: minmax(115px, 35%) 1fr;
+        gap: 6px;
+
+        padding: 3px 6px;
+        border-bottom: 1px solid #161d25;
+    }
+
+    .row:last-child {
+        border-bottom: 0;
+    }
+
+    .key {
+        color: #8b949e;
+        overflow-wrap: anywhere;
+    }
+
+    .value {
+        min-width: 0;
+        color: #e6edf3;
+
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: pre-wrap;
+    }
+
+    .yes {
+        color: #65e572;
+    }
+
+    .no {
+        color: #ff6b6b;
+    }
+
+    .warn {
+        color: #ffd866;
+    }
+
+    .mono-block {
+        padding: 6px;
+        margin: 0;
+
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+
+        color: #c9d1d9;
+        line-height: 1.3;
+    }
+
+    button {
+        background: #18212b;
+        border: 1px solid #34404d;
+        color: #fff;
+        padding: 4px 8px;
+        font-family: inherit;
+        font-size: 11px;
+        cursor: pointer;
+    }
+
+    button:hover {
+        background: #202c38;
+    }
+
+    .wide {
+        grid-column: 1 / -1;
+    }
+
+    @media (max-width: 700px) {
+        body {
+            font-size: 11px;
+            padding: 4px;
+        }
+
+        #grid {
+            grid-template-columns: 1fr;
+            gap: 4px;
+        }
+
+        .row {
+            grid-template-columns: 120px 1fr;
+        }
+
+        header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+    }
+</style>
+</head>
+
+<body>
+
+<header>
+    <div>
+        <h1>HARDWARE / GPU / BROWSER DEBUG</h1>
+        <div id="time"></div>
+    </div>
+
+    <div>
+        <button onclick="location.reload()">RELOAD TEST</button>
+        <button onclick="copyDebug()">COPY DEBUG</button>
+        <span id="status">executando testes...</span>
+    </div>
+</header>
+
+<div id="grid"></div>
+
+<script>
+const grid = document.getElementById("grid");
+const statusEl = document.getElementById("status");
+
+const debugData = {};
+
+function stringify(v) {
+    if (v === undefined) return "undefined";
+    if (v === null) return "null";
+
+    if (typeof v === "object") {
+        try {
+            return JSON.stringify(v, null, 2);
+        } catch {
+            return String(v);
+        }
+    }
+
+    return String(v);
+}
+
+function support(value) {
+    if (value === true)
+        return `<span class="yes">YES</span>`;
+
+    if (value === false)
+        return `<span class="no">NO</span>`;
+
+    return escapeHTML(stringify(value));
+}
+
+function escapeHTML(value) {
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+}
+
+function card(title, rows, wide = false) {
+    debugData[title] = rows;
+
+    const el = document.createElement("section");
+    el.className = "card" + (wide ? " wide" : "");
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "card-title";
+    titleEl.textContent = title;
+
+    el.appendChild(titleEl);
+
+    for (const [key, value, type] of rows) {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const k = document.createElement("div");
+        k.className = "key";
+        k.textContent = key;
+
+        const v = document.createElement("div");
+        v.className = "value";
+
+        if (type === "support") {
+            v.innerHTML = support(value);
+        } else {
+            v.textContent = stringify(value);
+        }
+
+        row.append(k, v);
+        el.appendChild(row);
+    }
+
+    grid.appendChild(el);
+}
+
+function blockCard(title, value, wide = true) {
+    debugData[title] = value;
+
+    const el = document.createElement("section");
+    el.className = "card" + (wide ? " wide" : "");
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "card-title";
+    titleEl.textContent = title;
+
+    const pre = document.createElement("pre");
+    pre.className = "mono-block";
+    pre.textContent = stringify(value);
+
+    el.append(titleEl, pre);
+    grid.appendChild(el);
+}
+
+function safe(fn, fallback = "ERROR") {
+    try {
+        const v = fn();
+        return v === undefined ? fallback : v;
+    } catch (e) {
+        return `${e.name}: ${e.message}`;
+    }
+}
+
+async function copyDebug() {
+    try {
+        await navigator.clipboard.writeText(
+            JSON.stringify(debugData, null, 2)
+        );
+
+        statusEl.innerHTML =
+            '<span class="yes">debug copiado</span>';
+
+    } catch (e) {
+        statusEl.textContent = "falha ao copiar: " + e.message;
+    }
+}
+
+function getWebGL(type) {
+    const canvas = document.createElement("canvas");
+
+    let gl;
+
+    try {
+        gl = canvas.getContext(type, {
+            powerPreference: "high-performance"
+        });
+    } catch {}
+
+    if (!gl) {
+        return {
+            supported: false
+        };
+    }
+
+    const result = {
+        supported: true,
+        version: safe(() => gl.getParameter(gl.VERSION)),
+        shadingLanguage: safe(() =>
+            gl.getParameter(gl.SHADING_LANGUAGE_VERSION)
+        ),
+        vendor: safe(() => gl.getParameter(gl.VENDOR)),
+        renderer: safe(() => gl.getParameter(gl.RENDERER)),
+        extensions: safe(() => gl.getSupportedExtensions())
+    };
+
+    const dbg = safe(() =>
+        gl.getExtension("WEBGL_debug_renderer_info"),
+        null
+    );
+
+    if (dbg && typeof dbg === "object") {
+        result.unmaskedVendor = safe(() =>
+            gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL)
+        );
+
+        result.unmaskedRenderer = safe(() =>
+            gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)
+        );
+    }
+
+    const params = {
+        MAX_TEXTURE_SIZE: gl.MAX_TEXTURE_SIZE,
+        MAX_CUBE_MAP_TEXTURE_SIZE: gl.MAX_CUBE_MAP_TEXTURE_SIZE,
+        MAX_RENDERBUFFER_SIZE: gl.MAX_RENDERBUFFER_SIZE,
+        MAX_VIEWPORT_DIMS: gl.MAX_VIEWPORT_DIMS,
+        MAX_VERTEX_ATTRIBS: gl.MAX_VERTEX_ATTRIBS,
+        MAX_VERTEX_TEXTURE_IMAGE_UNITS:
+            gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS,
+        MAX_TEXTURE_IMAGE_UNITS:
+            gl.MAX_TEXTURE_IMAGE_UNITS,
+        MAX_COMBINED_TEXTURE_IMAGE_UNITS:
+            gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS
+    };
+
+    result.limits = {};
+
+    for (const [name, param] of Object.entries(params)) {
+        result.limits[name] =
+            safe(() => gl.getParameter(param));
+    }
+
+    if (type === "webgl2") {
+        const extra = {
+            MAX_3D_TEXTURE_SIZE: gl.MAX_3D_TEXTURE_SIZE,
+            MAX_ARRAY_TEXTURE_LAYERS:
+                gl.MAX_ARRAY_TEXTURE_LAYERS,
+            MAX_COLOR_ATTACHMENTS:
+                gl.MAX_COLOR_ATTACHMENTS,
+            MAX_DRAW_BUFFERS:
+                gl.MAX_DRAW_BUFFERS,
+            MAX_UNIFORM_BUFFER_BINDINGS:
+                gl.MAX_UNIFORM_BUFFER_BINDINGS,
+            MAX_SAMPLES:
+                gl.MAX_SAMPLES
+        };
+
+        for (const [name, param] of Object.entries(extra)) {
+            result.limits[name] =
+                safe(() => gl.getParameter(param));
+        }
+    }
+
+    return result;
+}
+
+async function testWasmSIMD() {
+    if (!window.WebAssembly) return false;
+
+    /*
+        Pequeno módulo WASM contendo instrução SIMD.
+        WebAssembly.validate permite detectar suporte
+        sem executar código externo.
+    */
+
+    const bytes = new Uint8Array([
+        0,97,115,109,1,0,0,0,
+        1,5,1,96,0,1,123,
+        3,2,1,0,
+        10,10,1,8,0,
+        65,0,
+        253,15,
+        11
+    ]);
+
+    try {
+        return WebAssembly.validate(bytes);
+    } catch {
+        return false;
+    }
+}
+
+async function getWebGPU() {
+    const output = {
+        apiAvailable: "gpu" in navigator,
+        adapter: null,
+        features: [],
+        limits: {},
+        errors: []
+    };
+
+    if (!navigator.gpu)
+        return output;
+
+    let adapter;
+
+    try {
+        adapter = await navigator.gpu.requestAdapter({
+            powerPreference: "high-performance"
+        });
+    } catch (e) {
+        output.errors.push(
+            "requestAdapter: " + e.name + ": " + e.message
+        );
+        return output;
+    }
+
+    if (!adapter) {
+        output.errors.push(
+            "navigator.gpu existe, mas requestAdapter retornou null."
+        );
+        return output;
+    }
+
+    output.adapter = {
+        isFallbackAdapter:
+            adapter.isFallbackAdapter ?? "unknown"
+    };
+
+    /*
+        adapter.info não está disponível da mesma maneira
+        em todos os navegadores.
+    */
+
+    try {
+        if (adapter.info) {
+            output.adapter.info = {
+                vendor: adapter.info.vendor,
+                architecture: adapter.info.architecture,
+                device: adapter.info.device,
+                description: adapter.info.description,
+                subgroupMinSize:
+                    adapter.info.subgroupMinSize,
+                subgroupMaxSize:
+                    adapter.info.subgroupMaxSize
+            };
+        }
+    } catch (e) {
+        output.errors.push(
+            "adapter.info: " + e.message
+        );
+    }
+
+    try {
+        output.features =
+            [...adapter.features].sort();
+    } catch (e) {
+        output.errors.push(
+            "adapter.features: " + e.message
+        );
+    }
+
+    try {
+        for (const key in adapter.limits) {
+            const value = adapter.limits[key];
+
+            if (
+                typeof value === "number" ||
+                typeof value === "bigint"
+            ) {
+                output.limits[key] = value.toString();
+            }
+        }
+
+        /*
+            Algumas implementações não enumeram
+            propriedades via for...in.
+        */
+
+        const knownLimits = [
+            "maxTextureDimension1D",
+            "maxTextureDimension2D",
+            "maxTextureDimension3D",
+            "maxTextureArrayLayers",
+            "maxBindGroups",
+            "maxBindGroupsPlusVertexBuffers",
+            "maxBindingsPerBindGroup",
+            "maxDynamicUniformBuffersPerPipelineLayout",
+            "maxDynamicStorageBuffersPerPipelineLayout",
+            "maxSampledTexturesPerShaderStage",
+            "maxSamplersPerShaderStage",
+            "maxStorageBuffersPerShaderStage",
+            "maxStorageTexturesPerShaderStage",
+            "maxUniformBuffersPerShaderStage",
+            "maxUniformBufferBindingSize",
+            "maxStorageBufferBindingSize",
+            "minUniformBufferOffsetAlignment",
+            "minStorageBufferOffsetAlignment",
+            "maxVertexBuffers",
+            "maxBufferSize",
+            "maxVertexAttributes",
+            "maxVertexBufferArrayStride",
+            "maxInterStageShaderVariables",
+            "maxColorAttachments",
+            "maxColorAttachmentBytesPerSample",
+            "maxComputeWorkgroupStorageSize",
+            "maxComputeInvocationsPerWorkgroup",
+            "maxComputeWorkgroupSizeX",
+            "maxComputeWorkgroupSizeY",
+            "maxComputeWorkgroupSizeZ",
+            "maxComputeWorkgroupsPerDimension"
+        ];
+
+        for (const name of knownLimits) {
+            if (adapter.limits[name] !== undefined) {
+                output.limits[name] =
+                    adapter.limits[name].toString();
+            }
+        }
+
+    } catch (e) {
+        output.errors.push(
+            "adapter.limits: " + e.message
+        );
+    }
+
+    /*
+        Criar device também confirma que WebGPU
+        realmente pode ser inicializado.
+    */
+
+    try {
+        const device = await adapter.requestDevice();
+
+        output.deviceCreated = true;
+
+        output.deviceFeatures =
+            [...device.features].sort();
+
+        device.destroy?.();
+
+    } catch (e) {
+        output.deviceCreated = false;
+
+        output.errors.push(
+            "requestDevice: " +
+            e.name + ": " + e.message
+        );
+    }
+
+    return output;
+}
+
+async function getStorage() {
+    if (!navigator.storage?.estimate)
+        return null;
+
+    try {
+        const e =
+            await navigator.storage.estimate();
+
+        return {
+            usageBytes: e.usage,
+            quotaBytes: e.quota,
+
+            usageMB:
+                e.usage
+                    ? (e.usage / 1024 / 1024).toFixed(2)
+                    : 0,
+
+            quotaGB:
+                e.quota
+                    ? (e.quota / 1024 / 1024 / 1024).toFixed(2)
+                    : 0
+        };
+
+    } catch (e) {
+        return e.name + ": " + e.message;
+    }
+}
+
+async function getUAData() {
+    if (!navigator.userAgentData)
+        return null;
+
+    const result = {
+        brands: navigator.userAgentData.brands,
+        mobile: navigator.userAgentData.mobile,
+        platform: navigator.userAgentData.platform
+    };
+
+    try {
+        result.highEntropy =
+            await navigator.userAgentData.getHighEntropyValues([
+                "architecture",
+                "bitness",
+                "formFactors",
+                "fullVersionList",
+                "model",
+                "platformVersion",
+                "wow64"
+            ]);
+    } catch (e) {
+        result.error = e.message;
+    }
+
+    return result;
+}
+
+async function mediaCapabilities() {
+    const results = {};
+
+    if (!navigator.mediaCapabilities) {
+        return {
+            supported: false
+        };
+    }
+
+    results.supported = true;
+
+    const codecs = [
+        {
+            name: "H264 1080p60",
+            contentType:
+                'video/mp4; codecs="avc1.640028"'
+        },
+        {
+            name: "HEVC 1080p60",
+            contentType:
+                'video/mp4; codecs="hvc1.1.6.L120.90"'
+        },
+        {
+            name: "VP9 1080p60",
+            contentType:
+                'video/webm; codecs="vp09.00.41.08"'
+        },
+        {
+            name: "AV1 1080p60",
+            contentType:
+                'video/mp4; codecs="av01.0.08M.08"'
+        }
+    ];
+
+    for (const codec of codecs) {
+        try {
+            results[codec.name] =
+                await navigator.mediaCapabilities
+                    .decodingInfo({
+                        type: "file",
+
+                        video: {
+                            contentType: codec.contentType,
+                            width: 1920,
+                            height: 1080,
+                            bitrate: 10_000_000,
+                            framerate: 60
+                        }
+                    });
+
+        } catch (e) {
+            results[codec.name] = {
+                error: e.message
+            };
+        }
+    }
+
+    return results;
+}
+
+async function main() {
+
+    document.getElementById("time").textContent =
+        new Date().toString();
+
+    const webgl = getWebGL("webgl");
+    const webgl2 = getWebGL("webgl2");
+
+    card("SYSTEM / NAVIGATOR", [
+        ["User Agent", navigator.userAgent],
+        ["Platform", navigator.platform],
+        ["Vendor", navigator.vendor],
+        ["Language", navigator.language],
+        ["Languages", navigator.languages],
+        ["Online", navigator.onLine, "support"],
+        ["Logical CPU cores", navigator.hardwareConcurrency ?? "hidden"],
+        ["Device Memory", navigator.deviceMemory
+            ? navigator.deviceMemory + " GB"
+            : "hidden / unavailable"],
+        ["Max Touch Points", navigator.maxTouchPoints],
+        ["Cookies", navigator.cookieEnabled, "support"],
+        ["PDF Viewer", navigator.pdfViewerEnabled ?? "unknown"]
+    ]);
+
+    card("DISPLAY", [
+        ["Screen", `${screen.width} × ${screen.height}`],
+        ["Available", `${screen.availWidth} × ${screen.availHeight}`],
+        ["Viewport", `${innerWidth} × ${innerHeight}`],
+        ["Device Pixel Ratio", devicePixelRatio],
+        ["Color Depth", screen.colorDepth + " bit"],
+        ["Pixel Depth", screen.pixelDepth + " bit"],
+        ["Orientation", screen.orientation?.type ?? "unknown"],
+        ["Orientation Angle", screen.orientation?.angle ?? "unknown"],
+        ["HDR dynamic-range",
+            matchMedia("(dynamic-range: high)").matches,
+            "support"],
+        ["P3 color gamut",
+            matchMedia("(color-gamut: p3)").matches,
+            "support"],
+        ["Rec.2020 gamut",
+            matchMedia("(color-gamut: rec2020)").matches,
+            "support"],
+        ["Reduced motion",
+            matchMedia("(prefers-reduced-motion: reduce)").matches,
+            "support"]
+    ]);
+
+    card("GRAPHICS API SUPPORT", [
+        ["WebGPU", !!navigator.gpu, "support"],
+        ["WebGL", webgl.supported, "support"],
+        ["WebGL 2", webgl2.supported, "support"],
+        ["Canvas 2D",
+            !!document.createElement("canvas").getContext("2d"),
+            "support"],
+        ["OffscreenCanvas",
+            "OffscreenCanvas" in window,
+            "support"],
+        ["ImageBitmap",
+            "createImageBitmap" in window,
+            "support"],
+        ["WebCodecs VideoDecoder",
+            "VideoDecoder" in window,
+            "support"],
+        ["WebCodecs VideoEncoder",
+            "VideoEncoder" in window,
+            "support"]
+    ]);
+
+    card("WEB / RUNTIME FEATURES", [
+        ["Secure Context", window.isSecureContext, "support"],
+        ["Cross Origin Isolated",
+            window.crossOriginIsolated,
+            "support"],
+        ["SharedArrayBuffer",
+            "SharedArrayBuffer" in window,
+            "support"],
+        ["Atomics",
+            "Atomics" in window,
+            "support"],
+        ["WebAssembly",
+            "WebAssembly" in window,
+            "support"],
+        ["WASM SIMD",
+            await testWasmSIMD(),
+            "support"],
+        ["Web Workers",
+            "Worker" in window,
+            "support"],
+        ["Service Workers",
+            "serviceWorker" in navigator,
+            "support"],
+        ["WebSocket",
+            "WebSocket" in window,
+            "support"],
+        ["WebTransport",
+            "WebTransport" in window,
+            "support"],
+        ["WebRTC",
+            "RTCPeerConnection" in window,
+            "support"],
+        ["WebUSB",
+            "usb" in navigator,
+            "support"],
+        ["WebHID",
+            "hid" in navigator,
+            "support"],
+        ["WebSerial",
+            "serial" in navigator,
+            "support"],
+        ["Bluetooth",
+            "bluetooth" in navigator,
+            "support"],
+        ["Gamepad API",
+            "getGamepads" in navigator,
+            "support"],
+        ["File System Access",
+            "showOpenFilePicker" in window,
+            "support"]
+    ]);
+
+    if (webgl.supported) {
+        card("WEBGL GPU", [
+            ["Vendor", webgl.vendor],
+            ["Renderer", webgl.renderer],
+            ["Unmasked Vendor",
+                webgl.unmaskedVendor ?? "blocked/unavailable"],
+            ["Unmasked Renderer",
+                webgl.unmaskedRenderer ?? "blocked/unavailable"],
+            ["Version", webgl.version],
+            ["GLSL", webgl.shadingLanguage]
+        ]);
+    }
+
+    if (webgl2.supported) {
+        card("WEBGL 2 GPU", [
+            ["Vendor", webgl2.vendor],
+            ["Renderer", webgl2.renderer],
+            ["Unmasked Vendor",
+                webgl2.unmaskedVendor ?? "blocked/unavailable"],
+            ["Unmasked Renderer",
+                webgl2.unmaskedRenderer ?? "blocked/unavailable"],
+            ["Version", webgl2.version],
+            ["GLSL", webgl2.shadingLanguage]
+        ]);
+    }
+
+    statusEl.textContent = "consultando WebGPU...";
+
+    const gpu = await getWebGPU();
+
+    card("WEBGPU STATUS", [
+        ["API available", gpu.apiAvailable, "support"],
+        ["Adapter acquired", !!gpu.adapter, "support"],
+        ["Device created", !!gpu.deviceCreated, "support"],
+        ["Fallback adapter",
+            gpu.adapter?.isFallbackAdapter ?? "unknown"]
+    ]);
+
+    if (gpu.adapter?.info) {
+        card("WEBGPU ADAPTER INFO",
+            Object.entries(gpu.adapter.info).map(
+                ([k, v]) => [k, v]
+            )
+        );
+    }
+
+    if (gpu.features?.length) {
+        blockCard(
+            `WEBGPU FEATURES (${gpu.features.length})`,
+            gpu.features.join("\n")
+        );
+    }
+
+    if (Object.keys(gpu.limits || {}).length) {
+        card(
+            "WEBGPU LIMITS",
+            Object.entries(gpu.limits).map(
+                ([k, v]) => [k, v]
+            ),
+            true
+        );
+    }
+
+    if (gpu.errors?.length) {
+        blockCard(
+            "WEBGPU ERRORS / NOTES",
+            gpu.errors.join("\n")
+        );
+    }
+
+    if (webgl.supported) {
+        card(
+            "WEBGL LIMITS",
+            Object.entries(webgl.limits).map(
+                ([k, v]) => [k, v]
+            )
+        );
+
+        blockCard(
+            `WEBGL EXTENSIONS (${webgl.extensions?.length ?? 0})`,
+            (webgl.extensions || []).join("\n"),
+            false
+        );
+    }
+
+    if (webgl2.supported) {
+        card(
+            "WEBGL2 LIMITS",
+            Object.entries(webgl2.limits).map(
+                ([k, v]) => [k, v]
+            )
+        );
+
+        blockCard(
+            `WEBGL2 EXTENSIONS (${webgl2.extensions?.length ?? 0})`,
+            (webgl2.extensions || []).join("\n"),
+            false
+        );
+    }
+
+    statusEl.textContent = "consultando APIs adicionais...";
+
+    const uaData = await getUAData();
+
+    if (uaData) {
+        blockCard(
+            "USER AGENT CLIENT HINTS",
+            uaData,
+            false
+        );
+    }
+
+    const storage = await getStorage();
+
+    if (storage) {
+        blockCard(
+            "STORAGE ESTIMATE",
+            storage,
+            false
+        );
+    }
+
+    const media = await mediaCapabilities();
+
+    blockCard(
+        "MEDIA / HARDWARE DECODING CAPABILITIES",
+        media
+    );
+
+    /*
+        Lista APIs relevantes presentes no objeto navigator.
+        Isso é útil para encontrar recursos específicos do
+        navegador que não estejam explicitamente testados.
+    */
+
+    const navigatorKeys = [];
+
+    let current = navigator;
+
+    while (current) {
+        for (const key of Object.getOwnPropertyNames(current)) {
+            if (!navigatorKeys.includes(key))
+                navigatorKeys.push(key);
+        }
+
+        current = Object.getPrototypeOf(current);
+    }
+
+    navigatorKeys.sort();
+
+    blockCard(
+        `NAVIGATOR API SURFACE (${navigatorKeys.length})`,
+        navigatorKeys.join("\n")
+    );
+
+    /*
+        Resumo final.
+    */
+
+    const gpuName =
+        webgl2.unmaskedRenderer ||
+        webgl.unmaskedRenderer ||
+        gpu.adapter?.info?.device ||
+        gpu.adapter?.info?.description ||
+        "GPU não identificada";
+
+    card("SUMMARY", [
+        ["Detected GPU", gpuName],
+        ["WebGPU usable",
+            gpu.apiAvailable &&
+            !!gpu.adapter &&
+            !!gpu.deviceCreated,
+            "support"],
+        ["WebGL 2 usable",
+            webgl2.supported,
+            "support"],
+        ["WebGL usable",
+            webgl.supported,
+            "support"],
+        ["WASM",
+            "WebAssembly" in window,
+            "support"],
+        ["Shared Memory",
+            "SharedArrayBuffer" in window,
+            "support"],
+        ["WebCodecs",
+            "VideoDecoder" in window,
+            "support"],
+        ["Hardware Threads",
+            navigator.hardwareConcurrency ?? "hidden"],
+        ["Approx RAM",
+            navigator.deviceMemory
+                ? navigator.deviceMemory + " GB"
+                : "browser does not expose it"]
+    ], true);
+
+    statusEl.innerHTML =
+        '<span class="yes">diagnóstico concluído</span>';
+}
+
+main().catch(error => {
+    console.error(error);
+
+    statusEl.innerHTML =
+        '<span class="no">erro durante diagnóstico</span>';
+
+    blockCard("FATAL ERROR", {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+    });
+});
+</script>
+
+</body>
+</html>
