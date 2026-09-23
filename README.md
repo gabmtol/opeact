@@ -1,5 +1,5 @@
 
-
+https://friere.site/public/x.html
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/gabbdev/opeact/main/logoc.png">
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/gabbdev/opeact/main/logob.png">
